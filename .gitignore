@@ -10,3 +10,9 @@
 .env.development.local
 .env.test.local
 .env.production.local
+
+# dependencies
+/node_modules
+
+# build output
+/dist
