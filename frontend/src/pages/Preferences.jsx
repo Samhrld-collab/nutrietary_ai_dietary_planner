@@ -1,4 +1,3 @@
-// pages/Preferences.jsx
 import React, { useState, useEffect } from 'react';
 import { Save, Info, AlertCircle } from 'lucide-react';
 import { useAuth } from '../App';

@@ -1,4 +1,3 @@
-// pages/Generate.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Wand2, Clock, DollarSign, Calendar, ChefHat, AlertCircle, CheckCircle, Settings } from 'lucide-react';

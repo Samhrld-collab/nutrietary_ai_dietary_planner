@@ -1,4 +1,3 @@
-// App.jsx
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
 import { Menu, X, User, LogOut, ChefHat } from 'lucide-react';
