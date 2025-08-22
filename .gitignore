@@ -11,8 +11,6 @@
 .env.test.local
 .env.production.local
 
-# dependencies
-/node_modules
-
-# build output
-/dist
+# frontend project files
+/frontend/node_modules
+/frontend/dist
