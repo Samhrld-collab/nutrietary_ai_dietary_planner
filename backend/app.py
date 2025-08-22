@@ -10,6 +10,7 @@ import google.generativeai as genai
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import logging
+import pytz
 
 # Configuration & Logging
 APP_PORT = int(os.environ.get("PORT", 5000))
@@ -18,6 +19,7 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "replace_this_with_a_strong_secret")
 JWT_ALGO = "HS256"
 DB_PATH = os.environ.get("DB_PATH", "nutrietary.db")
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*")
+MYT = pytz.timezone('Asia/Kuala_Lumpur') # Define Malaysia Time Zone
 
 # Custom preferences configuration
 CUSTOM_PREFERENCES_MAX_LENGTH = 500  # Maximum characters for custom preferences
@@ -60,28 +62,28 @@ def init_db():
 
     # users
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+                   CREATE TABLE IF NOT EXISTS users (
+                                                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                        username TEXT UNIQUE NOT NULL,
+                                                        password_hash TEXT NOT NULL,
+                                                        created_at TIMESTAMP
+                   )
+                   """)
 
     # user preferences - updated to include custom_preferences
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_preferences (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            dietary_preferences TEXT,
-            budget REAL,
-            days INTEGER DEFAULT 3,
-            meal_types TEXT,
-            custom_preferences TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )
-    """)
+                   CREATE TABLE IF NOT EXISTS user_preferences (
+                                                                   id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                                   user_id INTEGER NOT NULL,
+                                                                   dietary_preferences TEXT,
+                                                                   budget REAL,
+                                                                   days INTEGER DEFAULT 3,
+                                                                   meal_types TEXT,
+                                                                   custom_preferences TEXT,
+                                                                   updated_at TIMESTAMP,
+                                                                   FOREIGN KEY (user_id) REFERENCES users (id)
+                       )
+                   """)
 
     # Check if custom_preferences column exists, add it if not (for existing databases)
     cursor.execute("PRAGMA table_info(user_preferences)")
@@ -92,28 +94,28 @@ def init_db():
 
     # meal_plans (stores whole plan JSON + grocery JSON)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS meal_plans (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            title TEXT,
-            plan_json TEXT NOT NULL,
-            grocery_json TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )
-    """)
+                   CREATE TABLE IF NOT EXISTS meal_plans (
+                                                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                             user_id INTEGER NOT NULL,
+                                                             title TEXT,
+                                                             plan_json TEXT NOT NULL,
+                                                             grocery_json TEXT,
+                                                             created_at TIMESTAMP,
+                                                             FOREIGN KEY (user_id) REFERENCES users (id)
+                       )
+                   """)
 
-    # Add conversations table if it doesn't exist (referenced in generate_mealplan)
+    # Add conversations table if it doesn't exist
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS conversations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            user_message TEXT,
-            ai_response TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )
-    """)
+                   CREATE TABLE IF NOT EXISTS conversations (
+                                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                                user_id INTEGER NOT NULL,
+                                                                user_message TEXT,
+                                                                ai_response TEXT,
+                                                                created_at TIMESTAMP,  -- Removed DEFAULT CURRENT_TIMESTAMP
+                                                                FOREIGN KEY (user_id) REFERENCES users (id)
+                       )
+                   """)
 
     conn.commit()
     conn.close()
@@ -122,13 +124,15 @@ def init_db():
 # Initialize DB at startup
 init_db()
 
-# Auth helpers
 def create_token(user_id, username, expires_minutes=60*24*7):
+    """
+    Creates a JWT token with an expiration timestamp in Malaysia Time.
+    """
     payload = {
         "sub": str(user_id),
         "username": username,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=expires_minutes),
-        "iat": datetime.now(timezone.utc)
+        "exp": datetime.now(MYT) + timedelta(minutes=expires_minutes), # Use MYT here
+        "iat": datetime.now(MYT) # Use MYT here
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
     if isinstance(token, bytes):
@@ -272,7 +276,8 @@ def register():
             return jsonify({"error": "username already exists"}), 409
 
         pw_hash = generate_password_hash(password)
-        cur.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, pw_hash))
+        now_in_myt = datetime.now(MYT) # Get the current time in MYT
+        cur.execute("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)", (username, pw_hash, now_in_myt))
         conn.commit()
         user_id = cur.lastrowid
         token = create_token(user_id, username)
@@ -327,10 +332,9 @@ def update_preferences():
         dietary = payload.get("dietary_preferences")
         budget = payload.get("budget")
         days = payload.get("days")
-        meal_types = payload.get("meal_types")  # comma separated string or list
+        meal_types = payload.get("meal_types")
         custom_prefs = payload.get("custom_preferences")
 
-        # Validate custom preferences length
         if custom_prefs is not None:
             custom_prefs = str(custom_prefs).strip()
             if len(custom_prefs) > CUSTOM_PREFERENCES_MAX_LENGTH:
@@ -338,31 +342,31 @@ def update_preferences():
                     "error": f"Custom preferences cannot exceed {CUSTOM_PREFERENCES_MAX_LENGTH} characters. Current length: {len(custom_prefs)}"
                 }), 400
 
-        # normalize meal_types to comma separated string
         if isinstance(meal_types, list):
             meal_types = ",".join([str(x).strip() for x in meal_types if x])
 
         conn = get_db()
         cur = conn.cursor()
-        # upsert preference row
+        now_in_myt = datetime.now(MYT) # Get the current time in MYT
+
         cur.execute("SELECT id FROM user_preferences WHERE user_id = ?", (user["id"],))
         existing = cur.fetchone()
         if existing:
             cur.execute("""
-                UPDATE user_preferences
-                SET dietary_preferences = COALESCE(?, dietary_preferences),
-                    budget = COALESCE(?, budget),
-                    days = COALESCE(?, days),
-                    meal_types = COALESCE(?, meal_types),
-                    custom_preferences = COALESCE(?, custom_preferences),
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = ?
-            """, (dietary, budget, days, meal_types, custom_prefs, user["id"]))
+                        UPDATE user_preferences
+                        SET dietary_preferences = COALESCE(?, dietary_preferences),
+                            budget = COALESCE(?, budget),
+                            days = COALESCE(?, days),
+                            meal_types = COALESCE(?, meal_types),
+                            custom_preferences = COALESCE(?, custom_preferences),
+                            updated_at = ? -- Pass the MYT timestamp here
+                        WHERE user_id = ?
+                        """, (dietary, budget, days, meal_types, custom_prefs, now_in_myt, user["id"]))
         else:
             cur.execute("""
-                INSERT INTO user_preferences (user_id, dietary_preferences, budget, days, meal_types, custom_preferences)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (user["id"], dietary, budget, days or 3, meal_types, custom_prefs))
+                        INSERT INTO user_preferences (user_id, dietary_preferences, budget, days, meal_types, custom_preferences, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (user["id"], dietary, budget, days or 3, meal_types, custom_prefs, now_in_myt)) # Pass the MYT timestamp here
         conn.commit()
         return jsonify({"success": True, "message": "preferences saved"})
 
@@ -379,10 +383,10 @@ def get_preferences():
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            SELECT dietary_preferences, budget, days, meal_types, custom_preferences, updated_at
-            FROM user_preferences
-            WHERE user_id = ?
-        """, (user["id"],))
+                    SELECT dietary_preferences, budget, days, meal_types, custom_preferences, updated_at
+                    FROM user_preferences
+                    WHERE user_id = ?
+                    """, (user["id"],))
         row = cur.fetchone()
         if not row:
             return jsonify({
@@ -415,10 +419,10 @@ def generate_mealplan():
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            SELECT dietary_preferences, budget, days, meal_types, custom_preferences
-            FROM user_preferences
-            WHERE user_id = ?
-        """, (user["id"],))
+                    SELECT dietary_preferences, budget, days, meal_types, custom_preferences
+                    FROM user_preferences
+                    WHERE user_id = ?
+                    """, (user["id"],))
         row = cur.fetchone()
         prefs = {}
         if row:
@@ -440,16 +444,12 @@ def generate_mealplan():
             logger.warning("Gemini not configured, returning placeholder text.")
         else:
             try:
-                # We attempt to request model to return JSON-only text via prompt
                 resp = MODEL.generate_content(prompt)
-                # Note: different SDK versions return different structures
                 ai_text = getattr(resp, "text", None) or (resp.get("output", "") if isinstance(resp, dict) else str(resp))
-                # Try parse JSON
                 ai_json = None
                 try:
                     ai_json = json.loads(ai_text)
                 except Exception:
-                    # maybe the model added some surrounding text; try to extract JSON block
                     import re
                     m = re.search(r"(\{[\s\S]*\})", ai_text)
                     if m:
@@ -463,19 +463,22 @@ def generate_mealplan():
                 ai_text = f"AI generation failed: {str(e)}"
                 ai_json = None
 
+        # Generate the timestamp in MYT
+        now_in_myt = datetime.now(MYT)
+
         # Save meal plan to DB
         cur.execute("""
-            INSERT INTO meal_plans (user_id, title, plan_json, grocery_json)
-            VALUES (?, ?, ?, ?)
-        """, (user["id"], (ai_json.get("title") if ai_json else None) or "", json.dumps(ai_json) if ai_json else ai_text, json.dumps(ai_json.get("grocery_list")) if (ai_json and ai_json.get("grocery_list")) else None))
+                    INSERT INTO meal_plans (user_id, title, plan_json, grocery_json, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, (user["id"], (ai_json.get("title") if ai_json else None) or "", json.dumps(ai_json) if ai_json else ai_text, json.dumps(ai_json.get("grocery_list")) if (ai_json and ai_json.get("grocery_list")) else None, now_in_myt))
         conn.commit()
         plan_id = cur.lastrowid
 
         # Also store a short conversation record
         cur.execute("""
-            INSERT INTO conversations (user_id, user_message, ai_response)
-            VALUES (?, ?, ?)
-        """, (user["id"], "Generate Meal Plan", ai_text if ai_text else json.dumps(ai_json)))
+                    INSERT INTO conversations (user_id, user_message, ai_response, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """, (user["id"], "Generate Meal Plan", ai_text if ai_text else json.dumps(ai_json), now_in_myt))
         conn.commit()
 
         return jsonify({
@@ -505,12 +508,12 @@ def list_mealplans():
         total = cur.fetchone()["cnt"]
 
         cur.execute("""
-            SELECT id, title, plan_json, grocery_json, created_at
-            FROM meal_plans
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            LIMIT ? OFFSET ?
-        """, (user["id"], per_page, offset))
+                    SELECT id, title, plan_json, grocery_json, created_at
+                    FROM meal_plans
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
+                        LIMIT ? OFFSET ?
+                    """, (user["id"], per_page, offset))
         rows = cur.fetchall()
         plans = []
         for r in rows:
@@ -615,7 +618,7 @@ def delete_mealplan(plan_id):
 def health():
     return jsonify({
         "status": "healthy",
-        "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+        "timestamp": datetime.now(MYT).isoformat() + "+08:00", # Use MYT here
         "gemini_configured": bool(GEMINI_API_KEY)
     })
 

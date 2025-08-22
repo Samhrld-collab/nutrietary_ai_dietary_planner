@@ -10,3 +10,7 @@
 .env.development.local
 .env.test.local
 .env.production.local
+
+# frontend project files
+/frontend/node_modules
+/frontend/dist
