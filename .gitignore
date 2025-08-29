@@ -1,0 +1,16 @@
+# JetBrains IDEs
+.idea/
+
+# macOS system files
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# frontend project files
+/frontend/node_modules
+/frontend/dist
