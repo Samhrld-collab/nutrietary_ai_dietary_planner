@@ -1,6 +1,6 @@
 # 🥗 Nutrietary - AI Dietary Planner
 
-This repository contains the full-stack codebase for Nutrietary, an AI-powered dietary planner. The project is organized into two main parts: a backend API built with Flask and a frontend web application using Vite + React.js.
+This repository contains the full-stack codebase for [Nutrietary](https://samhrld-collab.github.io/nutrietary_ai_dietary_planner/), an AI-powered dietary planner. The project is organized into two main parts: a backend API built with Flask and a frontend web application using Vite + React.js.
 
   * **`backend/`**: The Flask API that handles user authentication, data management, and AI integration.
   * **`frontend/`**: The Vite + React.js application that provides the user interface.
