@@ -1,0 +1,13 @@
+flask
+flask-cors
+google-generativeai
+PyJWT
+werkzeug
+gunicorn
+flask
+flask-cors
+google-generativeai
+gunicorn
+PyJWT
+pytz
+werkzeug
